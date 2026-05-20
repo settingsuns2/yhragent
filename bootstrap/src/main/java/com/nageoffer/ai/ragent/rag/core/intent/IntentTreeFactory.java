@@ -246,7 +246,89 @@ public class IntentTreeFactory {
         sales.setChildren(List.of(dingTaskSales));
         roots.add(sales);
 
-        // ========== 4. 系统交互 / 助手说明 ==========
+        // ========== 4. 编程工具 MCP ==========
+
+        IntentNode coding = IntentNode.builder()
+                .id("coding")
+                .name("编程工具")
+                .level(DOMAIN)
+                .kind(IntentKind.MCP)
+                .domainRegex("文件|file|read|write|edit|mkdir|delete|search|创建目录|读取|写入|编辑|删除|搜索|代码|code|workspace|上传|终端|命令|执行|command|terminal|python|脚本|script|shell")
+                .build();
+
+        IntentNode fileMgr = IntentNode.builder()
+                .id("coding-file-mgr")
+                .name("文件管理")
+                .level(CATEGORY)
+                .parentId(coding.getId())
+                .mcpToolId("file_manager")
+                .kind(IntentKind.MCP)
+                .description("读取、写入、编辑、搜索本地文件，管理目录结构，用于编程 Agent 操作宿主机文件系统")
+                .examples(List.of(
+                        "帮我读一下这个文件",
+                        "创建一个目录",
+                        "搜索代码中的TODO",
+                        "把这段内容写到文件里",
+                        "列出目录内容",
+                        "编辑配置文件",
+                        "查看文件内容"
+                ))
+                .build();
+
+        IntentNode terminalNode = IntentNode.builder()
+                .id("coding-terminal")
+                .name("终端命令执行")
+                .level(CATEGORY)
+                .parentId(coding.getId())
+                .mcpToolId("terminal__execute_command")
+                .kind(IntentKind.MCP)
+                .description("在终端执行系统命令、脚本，查看进程列表")
+                .examples(List.of(
+                        "执行一个命令",
+                        "运行脚本",
+                        "查看进程",
+                        "执行shell命令",
+                        "运行这个命令看看输出"
+                ))
+                .build();
+
+        IntentNode codeInterpreter = IntentNode.builder()
+                .id("coding-python")
+                .name("Python代码执行")
+                .level(CATEGORY)
+                .parentId(coding.getId())
+                .mcpToolId("code-interpreter__execute_python")
+                .kind(IntentKind.MCP)
+                .description("在沙箱中执行Python代码，进行数据分析、计算、文件处理，安装Python包")
+                .examples(List.of(
+                        "帮我写一段Python代码",
+                        "运行这段Python代码",
+                        "用Python计算一下",
+                        "安装一个Python包",
+                        "执行Python脚本"
+                ))
+                .build();
+
+        IntentNode editorNode = IntentNode.builder()
+                .id("coding-editor")
+                .name("文件编辑")
+                .level(CATEGORY)
+                .parentId(coding.getId())
+                .mcpToolId("editor__edit_file")
+                .kind(IntentKind.MCP)
+                .description("精确编辑文件内容，支持搜索替换、追加内容等操作")
+                .examples(List.of(
+                        "修改这个文件的第10行",
+                        "把hello替换成world",
+                        "在文件末尾追加内容",
+                        "编辑这个文件"
+                ))
+                .build();
+
+        coding.setChildren(List.of(fileMgr, terminalNode, codeInterpreter, editorNode));
+        roots.add(coding);
+
+        // ========== 5. 系统交互 / 助手说明 ==========
         IntentNode sys = IntentNode.builder()
                 .id("sys")
                 .name("系统交互")

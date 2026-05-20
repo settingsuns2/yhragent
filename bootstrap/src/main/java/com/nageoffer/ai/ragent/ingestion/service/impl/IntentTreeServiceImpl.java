@@ -28,6 +28,7 @@ import com.nageoffer.ai.ragent.rag.controller.request.IntentNodeUpdateRequest;
 import com.nageoffer.ai.ragent.rag.controller.vo.IntentNodeTreeVO;
 import com.nageoffer.ai.ragent.rag.dao.entity.IntentNodeDO;
 import com.nageoffer.ai.ragent.rag.dao.mapper.IntentNodeMapper;
+import com.nageoffer.ai.ragent.knowledge.dao.entity.KnowledgeBaseDO;
 import com.nageoffer.ai.ragent.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.rag.enums.IntentLevel;
@@ -72,7 +73,7 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         // 先按 parentCode 分组
         Map<String, List<IntentNodeDO>> parentMap = list.stream()
                 .collect(Collectors.groupingBy(node -> {
-                    String parent = node.getParentCode();
+                    String parent = node.getParentCode(); 
                     return parent == null ? "ROOT" : parent;
                 }));
 
@@ -150,6 +151,7 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
                 .paramPromptTemplate(requestParam.getParamPromptTemplate())
                 .promptSnippet(requestParam.getPromptSnippet())
                 .promptTemplate(requestParam.getPromptTemplate())
+                .domainRegex(requestParam.getDomainRegex())
                 .deleted(0)
                 .build();
 
@@ -206,6 +208,9 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         }
         if (req.getParamPromptTemplate() != null) {
             node.setParamPromptTemplate(req.getParamPromptTemplate());
+        }
+        if (req.getDomainRegex() != null) {
+            node.setDomainRegex(req.getDomainRegex());
         }
         node.setUpdateBy(UserContext.getUsername());
         this.updateById(node);
@@ -313,32 +318,47 @@ public class IntentTreeServiceImpl extends ServiceImpl<IntentNodeMapper, IntentN
         int created = 0;
 
         for (IntentNode node : allNodes) {
-            // 如果已经存在相同 intentCode，就跳过，避免重复初始化
             if (existsByIntentCode(node.getId())) {
                 continue;
             }
 
-            IntentNodeCreateRequest nodeCreateRequest = IntentNodeCreateRequest.builder()
+            String collectionName = null;
+            if (StrUtil.isNotBlank(node.getKbId())) {
+                KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(node.getKbId());
+                if (kb != null) {
+                    collectionName = kb.getCollectionName();
+                }
+            }
+
+            IntentNodeDO nodeDO = IntentNodeDO.builder()
                     .kbId(node.getKbId())
                     .intentCode(node.getId())
                     .name(node.getName())
                     .level(mapLevel(node.getLevel()))
                     .parentCode(node.getParentId())
                     .description(node.getDescription())
-                    .examples(node.getExamples())
+                    .examples(node.getExamples() == null ? null : GSON.toJson(node.getExamples()))
                     .topK(normalizeTopK(node.getTopK()))
                     .kind(mapKind(node.getKind()))
                     .mcpToolId(node.getMcpToolId())
+                    .collectionName(collectionName)
                     .sortOrder(sort++)
                     .enabled(1)
+                    .domainRegex(node.getDomainRegex())
                     .promptTemplate(node.getPromptTemplate())
                     .promptSnippet(node.getPromptSnippet())
                     .paramPromptTemplate(node.getParamPromptTemplate())
+                    .createBy("system")
+                    .updateBy("system")
+                    .deleted(0)
                     .build();
-            createNode(nodeCreateRequest);
+            this.save(nodeDO);
             created++;
         }
 
+        if (created > 0) {
+            intentTreeCacheManager.clearIntentTreeCache();
+        }
         return created;
     }
 

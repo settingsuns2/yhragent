@@ -1,0 +1,437 @@
+# ragent MCP Coding Tools Stack
+# 编程工具服务编排：命令行执行 + Python代码沙箱 + 文件编辑器
+#
+# 使用方式:
+#   docker compose -f mcp-coding-tools.compose.yaml up -d
+#
+# 前置条件:
+#   - Docker 已安装并运行
+#   - Docker Compose V2+
+#
+# 服务端口:
+#   - 9100: Terminal 命令执行服务
+#   - 8181: Python 代码解释器服务
+#   - 9101: 文件编辑器服务
+
+services:
+  mcp-terminal:
+    image: python:3.12-slim
+    container_name: ragent-mcp-terminal
+    working_dir: /app
+    ports:
+      - "9100:9100"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WORKSPACE=/workspace
+    volumes:
+      - ${WORKSPACE_DIR:-/tmp/ragent-workspace}:/workspace
+    command: >
+      bash -c "
+        pip install --no-cache-dir mcp starlette uvicorn &&
+        python -c '
+import os, subprocess, sys, json
+from mcp.server import Server
+from mcp.types import Tool, TextContent
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+import asyncio
+
+WORKSPACE = os.environ.get(\"WORKSPACE\", \"/workspace\")
+rpc_id = 0
+
+server = Server(\"terminal\")
+
+@server.list_tools()
+async def list_tools():
+    return [
+        Tool(
+            name=\"execute_command\",
+            description=\"Execute a shell command and return stdout/stderr\",
+            inputSchema={
+                \"type\": \"object\",
+                \"properties\": {
+                    \"command\": {\"type\": \"string\", \"description\": \"Shell command to execute\"},
+                    \"timeout\": {\"type\": \"number\", \"description\": \"Timeout in seconds (default 60)\"}
+                },
+                \"required\": [\"command\"]
+            }
+        ),
+        Tool(
+            name=\"execute_background\",
+            description=\"Start a command in the background and return process ID\",
+            inputSchema={
+                \"type\": \"object\",
+                \"properties\": {
+                    \"command\": {\"type\": \"string\", \"description\": \"Shell command to start in background\"}
+                },
+                \"required\": [\"command\"]
+            }
+        ),
+        Tool(
+            name=\"list_processes\",
+            description=\"List running background processes\",
+            inputSchema={\"type\": \"object\", \"properties\": {}}
+        ),
+    ]
+
+bg_processes = {}
+
+@server.call_tool()
+async def call_tool(name, arguments):
+    if name == \"execute_command\":
+        cmd = arguments.get(\"command\", \"\")
+        timeout = int(arguments.get(\"timeout\", 60))
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                timeout=timeout, cwd=WORKSPACE
+            )
+            output = result.stdout or \"(no stdout)\"
+            if result.stderr:
+                output += \"\\nSTDERR:\\n\" + result.stderr
+            if result.returncode != 0:
+                output += f\"\\nExit code: {result.returncode}\"
+            return [TextContent(type=\"text\", text=output)]
+        except subprocess.TimeoutExpired:
+            return [TextContent(type=\"text\", text=f\"Error: Command timed out after {timeout}s\")]
+        except Exception as e:
+            return [TextContent(type=\"text\", text=f\"Error: {e}\")]
+    elif name == \"execute_background\":
+        cmd = arguments.get(\"command\", \"\")
+        try:
+            proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                cwd=WORKSPACE
+            )
+            bg_processes[str(proc.pid)] = proc
+            return [TextContent(type=\"text\", text=f\"Process started with PID: {proc.pid}\")]
+        except Exception as e:
+            return [TextContent(type=\"text\", text=f\"Error: {e}\")]
+    elif name == \"list_processes\":
+        lines = []
+        for pid, proc in list(bg_processes.items()):
+            running = \"RUNNING\" if proc.poll() is None else f\"EXIT({proc.returncode})\"
+            lines.append(f\"PID {pid}: {running}\")
+            if not running.startswith(\"RUNNING\"):
+                del bg_processes[pid]
+        return [TextContent(type=\"text\", text=\"\\n\".join(lines) if lines else \"No background processes\")]
+    return [TextContent(type=\"text\", text=\"Unknown tool\")]
+
+async def handle_mcp(request: Request):
+    body = await request.json()
+    method = body.get(\"method\", \"\")
+    req_id = body.get(\"id\")
+
+    if method == \"initialize\":
+        return JSONResponse({
+            \"jsonrpc\": \"2.0\", \"id\": req_id,
+            \"result\": {
+                \"protocolVersion\": \"2026-02-28\",
+                \"capabilities\": {\"tools\": {\"listChanged\": False}},
+                \"serverInfo\": {\"name\": \"terminal-mcp\", \"version\": \"1.0.0\"}
+            }
+        })
+    elif method == \"notifications/initialized\":
+        return JSONResponse(None, status_code=204)
+    elif method == \"tools/list\":
+        tools = await server.list_tools()
+        tool_schemas = []
+        for t in tools:
+            tool_schemas.append({\"name\": t.name, \"description\": t.description, \"inputSchema\": t.inputSchema})
+        return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"result\": {\"tools\": tool_schemas}})
+    elif method == \"tools/call\":
+        params = body.get(\"params\", {})
+        tool_name = params.get(\"name\", \"\")
+        args = params.get(\"arguments\", {})
+        result = await server.call_tool(tool_name, args)
+        content = [{\"type\": c.type, \"text\": c.text} for c in result]
+        return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"result\": {\"content\": content, \"isError\": False}})
+    return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"error\": {\"code\": -32601, \"message\": \"Unknown method\"}})
+
+app = Starlette(routes=[Route(\"/mcp\", handle_mcp, methods=[\"POST\"])])
+import uvicorn
+uvicorn.run(app, host=\"0.0.0.0\", port=9100)
+'
+      "
+    restart: unless-stopped
+    networks:
+      - ragent-mcp
+
+  mcp-code-interpreter:
+    image: python:3.12-slim
+    container_name: ragent-mcp-code-interpreter
+    working_dir: /app
+    ports:
+      - "8181:8181"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WORKSPACE=/workspace
+    volumes:
+      - ${WORKSPACE_DIR:-/tmp/ragent-workspace}:/workspace
+    command: >
+      bash -c "
+        pip install --no-cache-dir starlette uvicorn &&
+        python -c '
+import os, subprocess, sys, json, uuid
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+WORKSPACE = os.environ.get(\"WORKSPACE\", \"/workspace\")
+
+contexts = {}
+
+def make_response(req_id, result):
+    return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"result\": result})
+
+def make_error(req_id, code, msg):
+    return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"error\": {\"code\": code, \"message\": msg}})
+
+async def handle_mcp(request: Request):
+    body = await request.json()
+    method = body.get(\"method\", \"\")
+    req_id = body.get(\"id\")
+
+    if method == \"initialize\":
+        return make_response(req_id, {
+            \"protocolVersion\": \"2026-02-28\",
+            \"capabilities\": {\"tools\": {\"listChanged\": False}},
+            \"serverInfo\": {\"name\": \"code-interpreter-mcp\", \"version\": \"1.0.0\"}
+        })
+    elif method == \"notifications/initialized\":
+        return JSONResponse(None, status_code=204)
+    elif method == \"tools/list\":
+        return make_response(req_id, {\"tools\": [
+            {\"name\": \"execute_python\", \"description\": \"Execute Python code and return output\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"code\": {\"type\": \"string\", \"description\": \"Python code to execute\"}, \"context_id\": {\"type\": \"string\", \"description\": \"Optional context ID for stateful execution\"}}, \"required\": [\"code\"]}},
+            {\"name\": \"install_package\", \"description\": \"Install a Python package via pip\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"package\": {\"type\": \"string\", \"description\": \"Package name (e.g. numpy, pandas)\"}}, \"required\": [\"package\"]}},
+            {\"name\": \"execute_shell\", \"description\": \"Execute a shell command in the workspace\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\", \"description\": \"Shell command\"}}, \"required\": [\"command\"]}},
+            {\"name\": \"create_context\", \"description\": \"Create a new Python execution context (virtual environment)\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {}, \"required\": []}},
+            {\"name\": \"list_contexts\", \"description\": \"List all execution contexts\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {}, \"required\": []}},
+        ]})
+    elif method == \"tools/call\":
+        params = body.get(\"params\", {})
+        tool_name = params.get(\"name\", \"\")
+        args = params.get(\"arguments\", {})
+        try:
+            text = dispatch_tool(tool_name, args)
+            return make_response(req_id, {\"content\": [{\"type\": \"text\", \"text\": text}], \"isError\": False})
+        except Exception as e:
+            return make_response(req_id, {\"content\": [{\"type\": \"text\", \"text\": f\"Error: {e}\"}], \"isError\": True})
+    return make_error(req_id, -32601, \"Unknown method\")
+
+def dispatch_tool(name, args):
+    if name == \"execute_python\":
+        code = args.get(\"code\", \"\")
+        ctx_id = args.get(\"context_id\")
+        env = dict(os.environ)
+        if ctx_id and ctx_id in contexts:
+            env[\"VIRTUAL_ENV\"] = contexts[ctx_id]
+            env[\"PATH\"] = os.path.join(contexts[ctx_id], \"bin\") + \":\" + os.environ.get(\"PATH\", \"\")
+        result = subprocess.run(
+            [sys.executable, \"-c\", code],
+            capture_output=True, text=True, timeout=120, cwd=WORKSPACE, env=env
+        )
+        output = result.stdout or \"\"
+        if result.stderr:
+            output += \"\\nSTDERR: \" + result.stderr
+        if result.returncode != 0:
+            output += f\"\\nExit code: {result.returncode}\"
+        return output
+    elif name == \"install_package\":
+        pkg = args.get(\"package\", \"\")
+        result = subprocess.run(
+            [sys.executable, \"-m\", \"pip\", \"install\", \"--no-cache-dir\", pkg],
+            capture_output=True, text=True, timeout=180
+        )
+        return result.stdout + (\"\\n\" + result.stderr if result.stderr else \"\")
+    elif name == \"execute_shell\":
+        cmd = args.get(\"command\", \"\")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120, cwd=WORKSPACE)
+        output = result.stdout or \"\"
+        if result.stderr:
+            output += \"\\nSTDERR: \" + result.stderr
+        return output
+    elif name == \"create_context\":
+        ctx_id = str(uuid.uuid4())[:8]
+        ctx_path = os.path.join(\"/tmp\", \"ctx_\" + ctx_id)
+        subprocess.run([sys.executable, \"-m\", \"venv\", ctx_path], capture_output=True, timeout=30)
+        contexts[ctx_id] = ctx_path
+        return f\"Context created: {ctx_id}\"
+    elif name == \"list_contexts\":
+        if not contexts:
+            return \"No contexts. Default uses system Python.\"
+        return \"\\n\".join(f\"{k}: {v}\" for k, v in contexts.items())
+    return f\"Unknown tool: {name}\"
+
+app = Starlette(routes=[Route(\"/mcp\", handle_mcp, methods=[\"POST\"])])
+import uvicorn
+uvicorn.run(app, host=\"0.0.0.0\", port=8181)
+'
+      "
+    restart: unless-stopped
+    networks:
+      - ragent-mcp
+
+  mcp-editor:
+    image: python:3.12-slim
+    container_name: ragent-mcp-editor
+    working_dir: /app
+    ports:
+      - "9101:9101"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WORKSPACE=/workspace
+    volumes:
+      - ${WORKSPACE_DIR:-/tmp/ragent-workspace}:/workspace
+    command: >
+      bash -c "
+        pip install --no-cache-dir starlette uvicorn &&
+        python -c '
+import os, json
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+WORKSPACE = os.environ.get(\"WORKSPACE\", \"/workspace\")
+
+def safe_path(filepath):
+    if filepath.startswith(\"/\"):
+        full = filepath
+    else:
+        full = os.path.join(WORKSPACE, filepath)
+    real = os.path.realpath(full)
+    ws_real = os.path.realpath(WORKSPACE)
+    if not real.startswith(ws_real):
+        raise ValueError(\"Path outside workspace: \" + filepath)
+    return real
+
+def make_response(req_id, result):
+    return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"result\": result})
+
+async def handle_mcp(request: Request):
+    body = await request.json()
+    method = body.get(\"method\", \"\")
+    req_id = body.get(\"id\")
+
+    if method == \"initialize\":
+        return make_response(req_id, {
+            \"protocolVersion\": \"2026-02-28\",
+            \"capabilities\": {\"tools\": {\"listChanged\": False}},
+            \"serverInfo\": {\"name\": \"file-editor-mcp\", \"version\": \"1.0.0\"}
+        })
+    elif method == \"notifications/initialized\":
+        return JSONResponse(None, status_code=204)
+    elif method == \"tools/list\":
+        return make_response(req_id, {\"tools\": [
+            {\"name\": \"read_file\", \"description\": \"Read file content with optional line range\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path relative to workspace\"}, \"start_line\": {\"type\": \"number\", \"description\": \"Start line (1-based, optional)\"}, \"end_line\": {\"type\": \"number\", \"description\": \"End line (optional)\"}}, \"required\": [\"path\"]}},
+            {\"name\": \"write_file\", \"description\": \"Write content to a file\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path\"}, \"content\": {\"type\": \"string\", \"description\": \"Content to write\"}}, \"required\": [\"path\", \"content\"]}},
+            {\"name\": \"edit_file\", \"description\": \"Replace text in a file (search and replace)\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path\"}, \"search\": {\"type\": \"string\", \"description\": \"Text to search for\"}, \"replace\": {\"type\": \"string\", \"description\": \"Replacement text\"}}, \"required\": [\"path\", \"search\", \"replace\"]}},
+            {\"name\": \"list_directory\", \"description\": \"List files and directories\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"Directory path (default: workspace root)\"}}, \"required\": []}},
+            {\"name\": \"create_directory\", \"description\": \"Create a directory recursively\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"Directory path to create\"}}, \"required\": [\"path\"]}},
+            {\"name\": \"delete_file\", \"description\": \"Delete a file\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path to delete\"}}, \"required\": [\"path\"]}},
+            {\"name\": \"append_file\", \"description\": \"Append content to a file\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path\"}, \"content\": {\"type\": \"string\", \"description\": \"Content to append\"}}, \"required\": [\"path\", \"content\"]}},
+            {\"name\": \"search_in_file\", \"description\": \"Search for text pattern in a file, return matching lines\",
+             \"inputSchema\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\", \"description\": \"File path\"}, \"query\": {\"type\": \"string\", \"description\": \"Search text\"}}, \"required\": [\"path\", \"query\"]}},
+        ]})
+    elif method == \"tools/call\":
+        params = body.get(\"params\", {})
+        name = params.get(\"name\", \"\")
+        args = params.get(\"arguments\", {})
+        try:
+            text = dispatch_tool(name, args)
+            return make_response(req_id, {\"content\": [{\"type\": \"text\", \"text\": text}], \"isError\": False})
+        except Exception as e:
+            return make_response(req_id, {\"content\": [{\"type\": \"text\", \"text\": f\"Error: {e}\"}], \"isError\": True})
+    return JSONResponse({\"jsonrpc\": \"2.0\", \"id\": req_id, \"error\": {\"code\": -32601, \"message\": \"Unknown method\"}})
+
+def dispatch_tool(name, args):
+    if name == \"read_file\":
+        p = safe_path(args[\"path\"])
+        start = int(args.get(\"start_line\", 1))
+        end = args.get(\"end_line\")
+        with open(p, \"r\", encoding=\"utf-8\", errors=\"replace\") as f:
+            lines = f.readlines()
+        selected = lines[start - 1:(int(end) if end else len(lines))]
+        numbered = [f\"{start + i}: {line.rstrip()}\" for i, line in enumerate(selected)]
+        return \"\\n\".join(numbered)
+    elif name == \"write_file\":
+        p = safe_path(args[\"path\"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, \"w\", encoding=\"utf-8\") as f:
+            f.write(args[\"content\"])
+        return \"File written: \" + args[\"path\"]
+    elif name == \"edit_file\":
+        p = safe_path(args[\"path\"])
+        with open(p, \"r\", encoding=\"utf-8\") as f:
+            content = f.read()
+        count = content.count(args[\"search\"])
+        if count == 0:
+            return \"No matches found for search text\"
+        content = content.replace(args[\"search\"], args[\"replace\"])
+        with open(p, \"w\", encoding=\"utf-8\") as f:
+            f.write(content)
+        return f\"Replaced {count} occurrence(s) in {args['path']}\"
+    elif name == \"list_directory\":
+        rel = args.get(\"path\", \".\")
+        p = safe_path(rel)
+        entries = sorted(os.listdir(p))
+        result = []
+        for e in entries:
+            full = os.path.join(p, e)
+            prefix = \"DIR \" if os.path.isdir(full) else \"FILE\"
+            size = os.path.getsize(full) if os.path.isfile(full) else 0
+            result.append(f\"{prefix} {e} ({size} bytes)\" if size else f\"{prefix} {e}\")
+        return \"\\n\".join(result) if result else \"(empty directory)\"
+    elif name == \"create_directory\":
+        p = safe_path(args[\"path\"])
+        os.makedirs(p, exist_ok=True)
+        return \"Directory created: \" + args[\"path\"]
+    elif name == \"delete_file\":
+        p = safe_path(args[\"path\"])
+        os.remove(p)
+        return \"File deleted: \" + args[\"path\"]
+    elif name == \"append_file\":
+        p = safe_path(args[\"path\"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, \"a\", encoding=\"utf-8\") as f:
+            f.write(args[\"content\"])
+        return \"Content appended to: \" + args[\"path\"]
+    elif name == \"search_in_file\":
+        p = safe_path(args[\"path\"])
+        query = args[\"query\"]
+        matches = []
+        with open(p, \"r\", encoding=\"utf-8\", errors=\"replace\") as f:
+            for i, line in enumerate(f, 1):
+                if query.lower() in line.lower():
+                    matches.append(f\"{i}: {line.rstrip()}\")
+        return \"\\n\".join(matches) if matches else \"No matches found\"
+    return f\"Unknown tool: {name}\"
+
+app = Starlette(routes=[Route(\"/mcp\", handle_mcp, methods=[\"POST\"])])
+import uvicorn
+uvicorn.run(app, host=\"0.0.0.0\", port=9101)
+'
+      "
+    restart: unless-stopped
+    networks:
+      - ragent-mcp
+
+networks:
+  ragent-mcp:
+    driver: bridge

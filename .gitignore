@@ -42,3 +42,18 @@ node_modules/
 dist/
 .vite/
 .env.local
+
+### Sensitive config files with API keys ###
+bootstrap/src/main/resources/application.yaml
+mcp-server/src/main/resources/application.yml
+
+### Workspace & temp data ###
+mcp-server/workspace/
+mcpworkspace/
+workspace/
+build-output.txt
+build-output2.txt
+req.json
+
+### Claude ###
+.claude/

@@ -39,9 +39,8 @@ public enum IngestionNodeType {
      */
     PARSER("parser"),
 
-    /**
-     * 文档增强节点 - 对整个文档进行AI增强处理
-     */
+    IMAGE_OCR("image_ocr"),
+
     ENHANCER("enhancer"),
 
     /**

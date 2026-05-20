@@ -15,37 +15,34 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.controller.request;
+package com.nageoffer.ai.ragent.ingestion.domain.settings;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class IntentNodeUpdateRequest {
+public class ImageOcrSettings {
 
-    private String name;
-    private Integer level;
-    private String parentCode;
-    private String description;
-    private List<String> examples;
-    private String collectionName;
-    private Integer topK;
-    private Integer kind;
-    private Integer sortOrder;
-    private Integer enabled;
-    private String promptSnippet;
-    private String promptTemplate;
-    private String paramPromptTemplate;
+    @Builder.Default
+    private String modelId = null;
 
-    /**
-     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
-     */
-    private String domainRegex;
+    @Builder.Default
+    private String systemPrompt = "你是一个专业的文档图片识别助手。请仔细观察图片，将其中的所有文字、表格、图表内容完整地转换为纯文本格式。保留原始结构和层次，不要遗漏任何信息。如果图片中包含表格，请用文本格式还原表格内容。只输出识别结果，不要添加额外解释。";
+
+    @Builder.Default
+    private String userPromptTemplate = "请识别并提取这张图片中的所有文字和内容：";
+
+    @Builder.Default
+    private int concurrency = 3;
+
+    @Builder.Default
+    private boolean enabled = true;
+
+    @Builder.Default
+    private boolean failOnError = true;
 }

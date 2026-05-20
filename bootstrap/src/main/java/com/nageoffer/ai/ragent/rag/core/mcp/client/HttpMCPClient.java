@@ -52,6 +52,11 @@ public class HttpMCPClient implements MCPClient {
     private final OkHttpClient httpClient;
     private final String serverUrl;
     private final AtomicLong requestId = new AtomicLong(1);
+    private volatile String lastError;
+
+    public String getLastError() {
+        return lastError;
+    }
 
     @Override
     public boolean initialize() {
@@ -109,6 +114,7 @@ public class HttpMCPClient implements MCPClient {
         boolean isError = result.has("isError") && result.get("isError").getAsBoolean();
         if (isError) {
             log.warn("MCP 工具调用返回错误，toolName={}, errorText={}", toolName, textResult);
+            this.lastError = textResult != null && !textResult.isBlank() ? textResult : "工具调用失败";
             return null;
         }
         return textResult;

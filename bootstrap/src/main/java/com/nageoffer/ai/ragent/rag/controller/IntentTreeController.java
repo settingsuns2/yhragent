@@ -100,4 +100,9 @@ public class IntentTreeController {
     public void batchDelete(@RequestBody IntentNodeBatchRequest requestParam) {
         intentTreeService.batchDeleteNodes(requestParam.getIds());
     }
+
+    @PostMapping("/intent-tree/init-from-factory")
+    public Result<Integer> initFromFactory() {
+        return Results.success(intentTreeService.initFromFactory());
+    }
 }

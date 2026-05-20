@@ -48,7 +48,14 @@ public class RemoteMCPToolExecutor implements MCPToolExecutor {
             long costMs = System.currentTimeMillis() - start;
 
             if (result == null) {
-                MCPResponse response = MCPResponse.error(request.getToolId(), "REMOTE_CALL_FAILED", "远程工具调用失败");
+                String errorMsg = "远程工具调用失败";
+                if (mcpClient instanceof HttpMCPClient httpMcpClient) {
+                    String lastErr = httpMcpClient.getLastError();
+                    if (lastErr != null && !lastErr.isBlank()) {
+                        errorMsg = lastErr;
+                    }
+                }
+                MCPResponse response = MCPResponse.error(request.getToolId(), "REMOTE_CALL_FAILED", errorMsg);
                 response.setCostMs(costMs);
                 return response;
             }

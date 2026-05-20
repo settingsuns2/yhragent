@@ -15,41 +15,26 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.infra.enums;
+package com.nageoffer.ai.ragent.infra.embedding;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import com.nageoffer.ai.ragent.infra.enums.ModelProvider;
+import okhttp3.OkHttpClient;
+import org.springframework.stereotype.Service;
 
-/**
- * 模型提供商枚举
- * 统一管理提供商名称，避免散落的字符串常量
- */
-@Getter
-@RequiredArgsConstructor
-public enum ModelProvider {
+@Service
+public class BaiLianEmbeddingClient extends AbstractOpenAIStyleEmbeddingClient {
 
-    /**
-     * Ollama 本地模型服务
-     */
-    OLLAMA("ollama"),
+    public BaiLianEmbeddingClient(OkHttpClient syncHttpClient) {
+        super(syncHttpClient);
+    }
 
-    /**
-     * 阿里云百炼大模型平台
-     */
-    BAI_LIAN("bailian"),
+    @Override
+    public String provider() {
+        return ModelProvider.BAI_LIAN.getId();
+    }
 
-    /**
-     * 硅基流动 AI 模型服务
-     */
-    SILICON_FLOW("siliconflow"),
-
-    DEEPSEEK("deepseek"),
-
-    NOOP("noop");
-
-    private final String id;
-
-    public boolean matches(String provider) {
-        return provider != null && provider.equalsIgnoreCase(id);
+    @Override
+    protected int maxBatchSize() {
+        return 25;
     }
 }

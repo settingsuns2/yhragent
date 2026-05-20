@@ -121,4 +121,7 @@ public class ChatRequest {
      * </p>
      */
     private Boolean enableTools;
+
+    @Default
+    private List<ToolDefinition> tools = new ArrayList<>();
 }

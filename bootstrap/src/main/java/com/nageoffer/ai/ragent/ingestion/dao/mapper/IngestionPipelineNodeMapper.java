@@ -19,6 +19,10 @@ package com.nageoffer.ai.ragent.ingestion.dao.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.nageoffer.ai.ragent.ingestion.dao.entity.IngestionPipelineNodeDO;
+import org.apache.ibatis.annotations.Delete;
 
 public interface IngestionPipelineNodeMapper extends BaseMapper<IngestionPipelineNodeDO> {
+
+    @Delete("DELETE FROM t_ingestion_pipeline_node WHERE pipeline_id = #{pipelineId}")
+    int physicalDeleteByPipelineId(String pipelineId);
 }

@@ -258,6 +258,7 @@ CREATE TABLE t_intent_node (
     top_k                 INTEGER,
     mcp_tool_id           VARCHAR(128),
     kind                  SMALLINT     NOT NULL DEFAULT 0,
+    domain_regex          VARCHAR(512),
     prompt_snippet        TEXT,
     prompt_template       TEXT,
     param_prompt_template TEXT,
@@ -600,6 +601,7 @@ COMMENT ON COLUMN t_intent_node.collection_name IS '关联的Collection名称';
 COMMENT ON COLUMN t_intent_node.top_k IS '知识库检索TopK';
 COMMENT ON COLUMN t_intent_node.mcp_tool_id IS 'MCP工具ID';
 COMMENT ON COLUMN t_intent_node.kind IS '类型 0：RAG知识库类 1：SYSTEM系统交互类';
+COMMENT ON COLUMN t_intent_node.domain_regex IS 'Domain级正则表达式（仅DOMAIN根节点使用，用于正则预路由）';
 COMMENT ON COLUMN t_intent_node.prompt_snippet IS '提示词片段';
 COMMENT ON COLUMN t_intent_node.prompt_template IS '提示词模板';
 COMMENT ON COLUMN t_intent_node.param_prompt_template IS '参数提取提示词模板（MCP模式专属）';

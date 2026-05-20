@@ -20,9 +20,11 @@ package com.nageoffer.ai.ragent.infra.chat;
 import cn.hutool.core.collection.CollUtil;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
+import com.nageoffer.ai.ragent.framework.convention.ToolDefinition;
 import com.nageoffer.ai.ragent.infra.config.AIModelProperties;
 import com.nageoffer.ai.ragent.infra.enums.ModelCapability;
 import com.nageoffer.ai.ragent.infra.http.HttpMediaTypes;
@@ -41,6 +43,7 @@ import okhttp3.ResponseBody;
 import okio.BufferedSource;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -207,6 +210,37 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
 
     // ==================== 公共构建方法 ====================
 
+    public ChatMessage chatWithToolCalls(ChatRequest request, ModelTarget target) {
+        AIModelProperties.ProviderConfig provider = HttpResponseHelper.requireProvider(target, provider());
+        if (requiresApiKey()) {
+            HttpResponseHelper.requireApiKey(provider, provider());
+        }
+
+        JsonObject reqBody = buildRequestBody(request, target, false);
+        Request requestHttp = newAuthorizedRequest(provider, target)
+                .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
+                .build();
+
+        JsonObject respJson;
+        try (Response response = syncHttpClient.newCall(requestHttp).execute()) {
+            if (!response.isSuccessful()) {
+                String body = HttpResponseHelper.readBody(response.body());
+                throw new ModelClientException(
+                        provider() + " 同步请求失败: HTTP " + response.code(),
+                        ModelClientErrorType.fromHttpStatus(response.code()),
+                        response.code()
+                );
+            }
+            respJson = HttpResponseHelper.parseJson(response.body(), provider());
+        } catch (IOException e) {
+            throw new ModelClientException(
+                    provider() + " 同步请求失败: " + e.getMessage(),
+                    ModelClientErrorType.NETWORK_ERROR, null, e);
+        }
+
+        return extractChatMessage(respJson);
+    }
+
     protected JsonObject buildRequestBody(ChatRequest request, ModelTarget target, boolean stream) {
         JsonObject body = new JsonObject();
         body.addProperty("model", HttpResponseHelper.requireModel(target, provider()));
@@ -229,8 +263,29 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
             body.addProperty("max_tokens", request.getMaxTokens());
         }
 
+        if (request.getTools() != null && !request.getTools().isEmpty()) {
+            body.add("tools", buildTools(request.getTools()));
+        }
+
         customizeRequestBody(body, request);
         return body;
+    }
+
+    private JsonArray buildTools(List<ToolDefinition> tools) {
+        JsonArray toolsArr = new JsonArray();
+        for (ToolDefinition tool : tools) {
+            JsonObject toolObj = new JsonObject();
+            toolObj.addProperty("type", tool.getType());
+            JsonObject func = new JsonObject();
+            func.addProperty("name", tool.getFunction().getName());
+            func.addProperty("description", tool.getFunction().getDescription());
+            if (tool.getFunction().getParameters() != null) {
+                func.add("parameters", gson.toJsonTree(tool.getFunction().getParameters()));
+            }
+            toolObj.add("function", func);
+            toolsArr.add(toolObj);
+        }
+        return toolsArr;
     }
 
     private JsonArray buildMessages(ChatRequest request) {
@@ -240,7 +295,52 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
             for (ChatMessage m : messages) {
                 JsonObject msg = new JsonObject();
                 msg.addProperty("role", toOpenAiRole(m.getRole()));
-                msg.addProperty("content", m.getContent());
+
+                if (m.getRole() == ChatMessage.Role.TOOL) {
+                    msg.addProperty("content", m.getContent() != null ? m.getContent() : "");
+                    if (m.getToolCallId() != null) {
+                        msg.addProperty("tool_call_id", m.getToolCallId());
+                    }
+                    arr.add(msg);
+                    continue;
+                }
+
+                if (m.getToolCalls() != null && !m.getToolCalls().isEmpty()) {
+                    JsonArray toolCallsArr = new JsonArray();
+                    for (ChatMessage.ToolCall tc : m.getToolCalls()) {
+                        JsonObject tcObj = new JsonObject();
+                        tcObj.addProperty("id", tc.getId());
+                        tcObj.addProperty("type", tc.getType() != null ? tc.getType() : "function");
+                        JsonObject funcObj = new JsonObject();
+                        funcObj.addProperty("name", tc.getFunction().getName());
+                        funcObj.addProperty("arguments", tc.getFunction().getArguments());
+                        tcObj.add("function", funcObj);
+                        toolCallsArr.add(tcObj);
+                    }
+                    msg.add("tool_calls", toolCallsArr);
+                    if (m.getContent() != null) {
+                        msg.addProperty("content", m.getContent());
+                    } else {
+                        msg.addProperty("content", "");
+                    }
+                } else if (m.isMultiModal()) {
+                    JsonArray contentParts = new JsonArray();
+                    for (ChatMessage.ContentPart part : m.getMultiModalContent()) {
+                        JsonObject partObj = new JsonObject();
+                        partObj.addProperty("type", part.getType());
+                        if ("text".equals(part.getType())) {
+                            partObj.addProperty("text", part.getText());
+                        } else if ("image_url".equals(part.getType()) && part.getImageUrl() != null) {
+                            JsonObject imgUrlObj = new JsonObject();
+                            imgUrlObj.addProperty("url", part.getImageUrl().getUrl());
+                            partObj.add("image_url", imgUrlObj);
+                        }
+                        contentParts.add(partObj);
+                    }
+                    msg.add("content", contentParts);
+                } else {
+                    msg.addProperty("content", m.getContent());
+                }
                 arr.add(msg);
             }
         }
@@ -252,6 +352,7 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
             case SYSTEM -> "system";
             case USER -> "user";
             case ASSISTANT -> "assistant";
+            case TOOL -> "tool";
         };
     }
 
@@ -265,6 +366,11 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
     }
 
     private String extractChatContent(JsonObject respJson) {
+        ChatMessage msg = extractChatMessage(respJson);
+        return msg.getContent();
+    }
+
+    protected ChatMessage extractChatMessage(JsonObject respJson) {
         if (respJson == null || !respJson.has("choices")) {
             throw new ModelClientException(provider() + " 响应缺少 choices", ModelClientErrorType.INVALID_RESPONSE, null);
         }
@@ -277,9 +383,28 @@ public abstract class AbstractOpenAIStyleChatClient implements ChatClient {
             throw new ModelClientException(provider() + " 响应缺少 message", ModelClientErrorType.INVALID_RESPONSE, null);
         }
         JsonObject message = choice0.getAsJsonObject("message");
-        if (message == null || !message.has("content") || message.get("content").isJsonNull()) {
-            throw new ModelClientException(provider() + " 响应缺少 content", ModelClientErrorType.INVALID_RESPONSE, null);
+
+        String content = null;
+        if (message.has("content") && !message.get("content").isJsonNull()) {
+            content = message.get("content").getAsString();
         }
-        return message.get("content").getAsString();
+
+        List<ChatMessage.ToolCall> toolCalls = null;
+        if (message.has("tool_calls") && message.get("tool_calls").isJsonArray()) {
+            toolCalls = new ArrayList<>();
+            for (JsonElement tcEl : message.getAsJsonArray("tool_calls")) {
+                JsonObject tcObj = tcEl.getAsJsonObject();
+                String id = tcObj.has("id") ? tcObj.get("id").getAsString() : "";
+                String type = tcObj.has("type") ? tcObj.get("type").getAsString() : "function";
+                JsonObject funcObj = tcObj.has("function") ? tcObj.getAsJsonObject("function") : new JsonObject();
+                String name = funcObj.has("name") ? funcObj.get("name").getAsString() : "";
+                String arguments = funcObj.has("arguments") ? funcObj.get("arguments").getAsString() : "{}";
+                toolCalls.add(new ChatMessage.ToolCall(id, name, arguments));
+            }
+        }
+
+        ChatMessage chatMessage = new ChatMessage(ChatMessage.Role.ASSISTANT, content);
+        chatMessage.setToolCalls(toolCalls);
+        return chatMessage;
     }
 }

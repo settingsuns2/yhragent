@@ -1,0 +1,31 @@
+server:
+  port: 9099
+
+spring:
+  application:
+    name: ragent-mcp-server
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+mcp:
+  remote:
+    enabled: true
+    services:
+      terminal:
+        base-url: http://127.0.0.1:9100/mcp
+        enabled: true
+        description: Terminal command execution service
+      code-interpreter:
+        base-url: http://127.0.0.1:8181/mcp
+        enabled: true
+        description: Python code interpreter sandbox service
+      editor:
+        base-url: http://127.0.0.1:9101/mcp
+        enabled: true
+        description: File editor service
+
+rag:
+  file-manager:
+    workspace: ./mcpworkspace

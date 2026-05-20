@@ -120,6 +120,13 @@ public class IngestionContext {
     private Throwable error;
 
     /**
+     * 解析阶段提取出的嵌入图片资源列表
+     * Parser 节点在解析包含图片的文档时，将图片数据收集到此列表
+     * 后续由 ImageOcrNode 统一调用多模态大模型进行识别
+     */
+    private List<ImageResource> imageResources;
+
+    /**
      * 是否跳过 IndexerNode 的向量写入
      * 为 true 时，IndexerNode 仅做校验不执行写入，由调用方统一在事务中完成向量持久化
      */

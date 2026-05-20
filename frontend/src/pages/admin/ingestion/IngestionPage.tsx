@@ -45,7 +45,7 @@ import {
   updateIngestionPipeline,
   uploadIngestionTask
 } from "@/services/ingestionService";
-import { getSystemSettings } from "@/services/settingsService";
+import { getSystemSettings, type ModelCandidate } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 const PIPELINE_PAGE_SIZE = 10;
 const TASK_PAGE_SIZE = 10;
@@ -67,6 +67,7 @@ const SOURCE_OPTIONS = [
 const NODE_TYPE_OPTIONS = [
   { value: "fetcher", label: "fetcher" },
   { value: "parser", label: "parser" },
+  { value: "image_ocr", label: "image_ocr" },
   { value: "enhancer", label: "enhancer" },
   { value: "chunker", label: "chunker" },
   { value: "enricher", label: "enricher" },
@@ -141,6 +142,7 @@ type PipelineFormValues = z.infer<typeof pipelineSchema>;
 type PipelineNodeType =
   | "fetcher"
   | "parser"
+  | "image_ocr"
   | "enhancer"
   | "chunker"
   | "enricher"
@@ -176,6 +178,13 @@ interface PipelineNodeForm {
   };
   parser: {
     rulesJson: string;
+  };
+  imageOcr: {
+    modelId: string;
+    systemPrompt: string;
+    userPromptTemplate: string;
+    concurrency: string;
+    enabled: boolean;
   };
   indexer: {
     embeddingModel: string;
@@ -698,7 +707,20 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
   const [saving, setSaving] = useState(false);
   const [nodeMode, setNodeMode] = useState<"form" | "json">("form");
   const [nodes, setNodes] = useState<PipelineNodeForm[]>([]);
+  const [chatCandidates, setChatCandidates] = useState<ModelCandidate[]>([]);
+  const [embeddingCandidates, setEmbeddingCandidates] = useState<ModelCandidate[]>([]);
   const defaultNodes = pipeline?.nodes?.length ? JSON.stringify(pipeline.nodes, null, 2) : "";
+
+  useEffect(() => {
+    if (open) {
+      getSystemSettings()
+        .then((settings) => {
+          setChatCandidates(settings.ai.chat.candidates || []);
+          setEmbeddingCandidates(settings.ai.embedding.candidates || []);
+        })
+        .catch(() => {});
+    }
+  }, [open]);
 
   const form = useForm<PipelineFormValues>({
     resolver: zodResolver(pipelineSchema),
@@ -741,6 +763,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     },
     parser: {
       rulesJson: ""
+    },
+    imageOcr: {
+      modelId: "",
+      systemPrompt: "",
+      userPromptTemplate: "",
+      concurrency: "3",
+      enabled: true
     },
     indexer: {
       embeddingModel: "",
@@ -794,6 +823,13 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         rulesJson: Array.isArray((settings as { rules?: unknown }).rules)
           ? JSON.stringify((settings as { rules?: unknown }).rules, null, 2)
           : ""
+      },
+      imageOcr: {
+        modelId: String((settings as { modelId?: string }).modelId || ""),
+        systemPrompt: String((settings as { systemPrompt?: string }).systemPrompt || ""),
+        userPromptTemplate: String((settings as { userPromptTemplate?: string }).userPromptTemplate || ""),
+        concurrency: settings.concurrency != null ? String(settings.concurrency) : "3",
+        enabled: (settings as { enabled?: boolean }).enabled ?? true
       },
       indexer: {
         embeddingModel: String((settings as { embeddingModel?: string }).embeddingModel || ""),
@@ -911,6 +947,27 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         return Object.keys(payload).length ? payload : undefined;
       }
       case "fetcher":
+      case "image_ocr": {
+        const payload: Record<string, unknown> = {};
+        if (node.imageOcr.modelId.trim()) {
+          payload.modelId = node.imageOcr.modelId.trim();
+        }
+        if (node.imageOcr.systemPrompt.trim()) {
+          payload.systemPrompt = node.imageOcr.systemPrompt.trim();
+        }
+        if (node.imageOcr.userPromptTemplate.trim()) {
+          payload.userPromptTemplate = node.imageOcr.userPromptTemplate.trim();
+        }
+        const concurrency = node.imageOcr.concurrency.trim();
+        if (concurrency) {
+          const num = Number(concurrency);
+          if (!Number.isNaN(num) && num > 0) {
+            payload.concurrency = num;
+          }
+        }
+        payload.enabled = node.imageOcr.enabled;
+        return Object.keys(payload).length ? payload : undefined;
+      }
       default:
         return undefined;
     }
@@ -1317,20 +1374,31 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                     {node.nodeType === "enhancer" ? (
                       <div className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">模型ID</label>
-                          <Input
-                            value={node.enhancer.modelId}
-                            onChange={(event) =>
+                          <label className="text-sm font-medium">模型</label>
+                          <Select
+                            value={node.enhancer.modelId || "__default__"}
+                            onValueChange={(value) =>
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, enhancer: { ...item.enhancer, modelId: event.target.value } }
+                                    ? { ...item, enhancer: { ...item.enhancer, modelId: value === "__default__" ? "" : value } }
                                     : item
                                 )
                               )
                             }
-                            placeholder="可选"
-                          />
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="默认（按优先级路由）" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__default__">默认（按优先级路由）</SelectItem>
+                              {chatCandidates.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.id} ({c.provider})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">增强任务</span>
@@ -1491,20 +1559,31 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                       <div className="space-y-4">
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">模型ID</label>
-                            <Input
-                              value={node.enricher.modelId}
-                              onChange={(event) =>
+                            <label className="text-sm font-medium">模型</label>
+                            <Select
+                              value={node.enricher.modelId || "__default__"}
+                              onValueChange={(value) =>
                                 setNodes((prev) =>
                                   prev.map((item) =>
                                     item.id === node.id
-                                      ? { ...item, enricher: { ...item.enricher, modelId: event.target.value } }
+                                      ? { ...item, enricher: { ...item.enricher, modelId: value === "__default__" ? "" : value } }
                                       : item
                                   )
                                 )
                               }
-                              placeholder="可选"
-                            />
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="默认（按优先级路由）" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">默认（按优先级路由）</SelectItem>
+                                {chatCandidates.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.id} ({c.provider})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div className="space-y-2">
                             <label className="text-sm font-medium">附加文档元数据</label>
@@ -1691,23 +1770,138 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                       </div>
                     ) : null}
 
-                    {node.nodeType === "indexer" ? (
+                    {node.nodeType === "image_ocr" ? (
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Embedding 模型</label>
-                          <Input
-                            value={node.indexer.embeddingModel}
-                            onChange={(event) =>
+                          <label className="text-sm font-medium">多模态模型</label>
+                          <Select
+                            value={node.imageOcr.modelId || "__default__"}
+                            onValueChange={(value) =>
                               setNodes((prev) =>
                                 prev.map((item) =>
                                   item.id === node.id
-                                    ? { ...item, indexer: { ...item.indexer, embeddingModel: event.target.value } }
+                                    ? { ...item, imageOcr: { ...item.imageOcr, modelId: value === "__default__" ? "" : value } }
                                     : item
                                 )
                               )
                             }
-                            placeholder="可选"
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="默认多模态模型" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__default__">默认（按优先级路由）</SelectItem>
+                              {chatCandidates.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.id} ({c.provider})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">并发数</label>
+                          <Input
+                            value={node.imageOcr.concurrency}
+                            onChange={(event) =>
+                              setNodes((prev) =>
+                                prev.map((item) =>
+                                  item.id === node.id
+                                    ? { ...item, imageOcr: { ...item.imageOcr, concurrency: event.target.value } }
+                                    : item
+                                )
+                              )
+                            }
+                            placeholder="3"
                           />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-sm font-medium">系统提示词</label>
+                          <Input
+                            value={node.imageOcr.systemPrompt}
+                            onChange={(event) =>
+                              setNodes((prev) =>
+                                prev.map((item) =>
+                                  item.id === node.id
+                                    ? { ...item, imageOcr: { ...item.imageOcr, systemPrompt: event.target.value } }
+                                    : item
+                                )
+                              )
+                            }
+                            placeholder="你是一个专业的文档图片识别助手..."
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-sm font-medium">用户提示词</label>
+                          <Input
+                            value={node.imageOcr.userPromptTemplate}
+                            onChange={(event) =>
+                              setNodes((prev) =>
+                                prev.map((item) =>
+                                  item.id === node.id
+                                    ? { ...item, imageOcr: { ...item.imageOcr, userPromptTemplate: event.target.value } }
+                                    : item
+                                )
+                              )
+                            }
+                            placeholder="请识别并提取这张图片中的所有文字和内容"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={node.imageOcr.enabled}
+                              onClick={() =>
+                                setNodes((prev) =>
+                                  prev.map((item) =>
+                                    item.id === node.id
+                                      ? { ...item, imageOcr: { ...item.imageOcr, enabled: !item.imageOcr.enabled } }
+                                      : item
+                                  )
+                                )
+                              }
+                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${node.imageOcr.enabled ? "bg-blue-600" : "bg-slate-200"}`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${node.imageOcr.enabled ? "translate-x-4" : "translate-x-1"}`}
+                              />
+                            </button>
+                            <span className="text-sm text-muted-foreground">启用 OCR</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {node.nodeType === "indexer" ? (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Embedding 模型</label>
+                          <Select
+                            value={node.indexer.embeddingModel || "__default__"}
+                            onValueChange={(value) =>
+                              setNodes((prev) =>
+                                prev.map((item) =>
+                                  item.id === node.id
+                                    ? { ...item, indexer: { ...item.indexer, embeddingModel: value === "__default__" ? "" : value } }
+                                    : item
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="默认 Embedding 模型" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__default__">默认（按优先级路由）</SelectItem>
+                              {embeddingCandidates.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.id} ({c.provider})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="space-y-2">
                           <label className="text-sm font-medium">元数据字段</label>

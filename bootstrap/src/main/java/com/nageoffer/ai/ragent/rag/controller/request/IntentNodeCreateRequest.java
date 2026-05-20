@@ -60,4 +60,9 @@ public class IntentNodeCreateRequest {
      * 参数提取提示词模板（MCP模式专属）
      */
     private String paramPromptTemplate;
+
+    /**
+     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
+     */
+    private String domainRegex;
 }

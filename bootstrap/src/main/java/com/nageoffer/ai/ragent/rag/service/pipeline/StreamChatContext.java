@@ -53,4 +53,22 @@ public class StreamChatContext {
 
     @Setter
     private List<SubQuestionIntent> subIntents;
+
+    // ==================== 正则预路由相关 ====================
+
+    /**
+     * 正则预路由匹配到的 Domain 节点 ID
+     * 非 null 表示用户问题匹配到了某个知识库 Domain，应走意图树流程
+     * null 表示未匹配任何 Domain，应走自由 Chat 流程
+     */
+    @Setter
+    private String matchedDomainId;
+
+    /**
+     * 降级原因标记
+     * null: 未降级（正常流程）
+     * "KB_MISS": Domain 正则命中但意图树叶子节点未找到文档，降级到自由 Chat
+     */
+    @Setter
+    private String fallbackReason;
 }

@@ -15,8 +15,8 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
     type: com.zaxxer.hikari.HikariDataSource
-    username: postgres
-    password: postgres
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     url: jdbc:postgresql://127.0.0.1:5432/ragent?client_encoding=UTF8
     hikari:
       connection-timeout: 5000
@@ -30,7 +30,6 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
-      password: 123456
 
 rocketmq:
   name-server: 127.0.0.1:9876
@@ -43,13 +42,13 @@ milvus:
 
 rag:
   vector:
-    type: pg  # 可选 milvus / pg
+    type: pg
 
   default:
     collection-name: rag_default_store
-    dimension: 1536
+    dimension: 1024
     metric-type: COSINE
-    sse-timeout-ms: 300000  # SSE 全局超时（毫秒），默认 5 分钟
+    sse-timeout-ms: 300000
 
   query-rewrite:
     enabled: true
@@ -91,6 +90,16 @@ rag:
       - name: default
         url: http://localhost:9099
 
+  workspace:
+    enabled: true
+    path: ../workspace
+    max-lines-per-file: 50
+    max-chars-per-file: 2000
+    memory-max-chars: 4000
+    memory-flush-enabled: true
+    dreaming-enabled: true
+    dreaming-interval-minutes: 60
+
   search:
     channels:
       vector-global:
@@ -113,16 +122,22 @@ ai:
         embedding: /v1/embeddings
     bailian:
       url: https://dashscope.aliyuncs.com
-      api-key: ${BAILIAN_API_KEY:}
+      api-key: ${BAILIAN_API_KEY:your-bailian-api-key}
       endpoints:
         chat: /compatible-mode/v1/chat/completions
+        embedding: /compatible-mode/v1/embeddings
         rerank: /api/v1/services/rerank/text-rerank/text-rerank
     siliconflow:
       url: https://api.siliconflow.cn
-      api-key: ${SILICONFLOW_API_KEY:}
+      api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key}
       endpoints:
         chat: /v1/chat/completions
         embedding: /v1/embeddings
+    deepseek:
+      url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:your-deepseek-api-key}
+      endpoints:
+        chat: /v1/chat/completions
 
   selection:
     failure-threshold: 2
@@ -132,41 +147,49 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model: qwen3-max
-    deep-thinking-model: qwen3-max
+    default-model: deepseek-v4-flash
+    deep-thinking-model: deepseek-v4-flash
     candidates:
+      - id: deepseek-v4-flash
+        provider: deepseek
+        model: deepseek-v4-flash
+        supports-thinking: true
+        priority: 1
+      - id: qwen3.6-plus
+        provider: bailian
+        model: qwen3.6-plus
+        priority: 2
       - id: qwen-plus
         provider: bailian
         model: qwen-plus-latest
-        priority: 1
-      - id: qwen3-max
-        provider: bailian
-        model: qwen3-max
-        supports-thinking: true
         priority: 3
       - id: glm-4.7
         provider: siliconflow
         model: Pro/zai-org/GLM-4.7
-        supports-thinking: true
-        priority: 0
+        priority: 4
       - id: qwen3-local
         provider: ollama
         model: qwen3:8b-fp16
-        priority: 2
+        priority: 5
 
   embedding:
-    default-model: qwen-emb-8b
+    default-model: qwen-text-embedding-v4
     candidates:
+      - id: qwen-text-embedding-v4
+        provider: bailian
+        model: text-embedding-v4
+        dimension: 1024
+        priority: 1
       - id: qwen-emb-8b
         provider: siliconflow
         model: Qwen/Qwen3-Embedding-8B
-        dimension: ${rag.default.dimension}
-        priority: 1
+        dimension: 1024
+        priority: 2
       - id: qwen-emb-local
         provider: ollama
         model: qwen3-embedding:8b-fp16
-        dimension: ${rag.default.dimension}
-        priority: 2
+        dimension: 1024
+        priority: 3
 
   rerank:
     default-model: qwen3-rerank
@@ -175,24 +198,3 @@ ai:
         provider: bailian
         model: qwen3-rerank
         priority: 1
-      - id: rerank-noop
-        provider: noop
-        model: noop
-        priority: 100
-
-rustfs:
-  url: http://localhost:9000
-  access-key-id: rustfsadmin
-  secret-access-key: rustfsadmin
-
-sa-token:
-  token-name: Authorization
-  timeout: 2592000
-  is-concurrent: true
-  is-share: false
-  token-style: simple-uuid
-  is-log: false
-  is-print: false
-
-app:
-  demo-mode: false

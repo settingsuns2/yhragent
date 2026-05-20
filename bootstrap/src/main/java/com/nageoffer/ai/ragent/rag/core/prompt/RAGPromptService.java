@@ -23,6 +23,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.RetrievedChunk;
 import com.nageoffer.ai.ragent.rag.core.intent.IntentNode;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
+import com.nageoffer.ai.ragent.rag.core.prompt.workspace.WorkspaceMdLoader;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -48,16 +49,40 @@ public class RAGPromptService {
     private static final String KB_CONTEXT_HEADER = "## 文档内容";
 
     private final PromptTemplateLoader promptTemplateLoader;
+    private final WorkspaceMdLoader workspaceMdLoader;
 
     /**
-     * 生成系统提示词，并对模板格式做清理
+     * 生成系统提示词，并对模板格式做清理。
+     * 自动追加 workspace 个性化配置上下文。
      */
     public String buildSystemPrompt(PromptContext context) {
         PromptBuildPlan plan = plan(context);
         String template = StrUtil.isNotBlank(plan.getBaseTemplate())
                 ? plan.getBaseTemplate()
                 : defaultTemplate(plan.getScene());
-        return StrUtil.isBlank(template) ? "" : PromptTemplateUtils.cleanupPrompt(template);
+        if (StrUtil.isBlank(template)) {
+            return "";
+        }
+        String basePrompt = PromptTemplateUtils.cleanupPrompt(template);
+        return appendWorkspaceContext(basePrompt);
+    }
+
+    /**
+     * 生成自由 Chat 的系统提示词，追加 workspace 上下文
+     */
+    public String buildFreeChatSystemPrompt(String basePrompt) {
+        if (StrUtil.isBlank(basePrompt)) {
+            return "";
+        }
+        return appendWorkspaceContext(basePrompt);
+    }
+
+    private String appendWorkspaceContext(String basePrompt) {
+        String workspaceContext = workspaceMdLoader.buildWorkspaceContext();
+        if (StrUtil.isBlank(workspaceContext)) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\n" + workspaceContext;
     }
 
     /**

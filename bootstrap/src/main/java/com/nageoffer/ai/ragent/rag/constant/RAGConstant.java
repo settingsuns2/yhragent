@@ -145,4 +145,15 @@ public class RAGConstant {
      * 兼顾动态数据片段与知识库内容的综合回答
      */
     public static final String MCP_KB_MIXED_PROMPT_PATH = "prompt/answer-chat-mcp-kb-mixed.st";
+
+    /**
+     * 自由 Chat 提示词模板路径
+     * 用于未匹配任何知识库 Domain 时的自由对话场景
+     * 允许大模型调用命令行、Python、网络等工具执行任务
+     */
+    public static final String FREE_CHAT_PROMPT_PATH = "prompt/free-chat.st";
+
+    public static final String WORKSPACE_MEMORY_FLUSH_PROMPT_PATH = "prompt/workspace-memory-flush.st";
+
+    public static final String WORKSPACE_DREAMING_PROMPT_PATH = "prompt/workspace-dreaming.st";
 }

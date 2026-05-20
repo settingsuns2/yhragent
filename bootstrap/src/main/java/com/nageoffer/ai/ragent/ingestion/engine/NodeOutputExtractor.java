@@ -45,6 +45,7 @@ public class NodeOutputExtractor {
         return switch (nodeType) {
             case FETCHER -> fetcherOutput(context);
             case PARSER -> parserOutput(context);
+            case IMAGE_OCR -> imageOcrOutput(context);
             case ENHANCER -> enhancerOutput(context);
             case CHUNKER -> chunkerOutput(context);
             case ENRICHER -> enricherOutput(context);
@@ -85,6 +86,13 @@ public class NodeOutputExtractor {
         output.put("keywords", context.getKeywords());
         output.put("questions", context.getQuestions());
         output.put("metadata", context.getMetadata());
+        return output;
+    }
+
+    private Map<String, Object> imageOcrOutput(IngestionContext context) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("imageCount", context.getImageResources() == null ? 0 : context.getImageResources().size());
+        output.put("rawText", context.getRawText());
         return output;
     }
 

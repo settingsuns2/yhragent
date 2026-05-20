@@ -26,6 +26,7 @@ import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.infra.chat.LLMService;
 import com.nageoffer.ai.ragent.rag.core.prompt.PromptTemplateLoader;
+import com.nageoffer.ai.ragent.rag.core.prompt.workspace.WorkspaceMemoryFlushService;
 import com.nageoffer.ai.ragent.rag.service.ConversationGroupService;
 import com.nageoffer.ai.ragent.rag.service.ConversationMessageService;
 import com.nageoffer.ai.ragent.rag.service.bo.ConversationSummaryBO;
@@ -64,6 +65,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     private final LLMService llmService;
     private final PromptTemplateLoader promptTemplateLoader;
     private final RedissonClient redissonClient;
+    private final WorkspaceMemoryFlushService workspaceMemoryFlushService;
 
     @Qualifier("memorySummaryThreadPoolExecutor")
     private final Executor memorySummaryExecutor;
@@ -157,6 +159,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
             }
 
             String existingSummary = latestSummary == null ? "" : latestSummary.getContent();
+
+            workspaceMemoryFlushService.flushToMemory(toSummarize);
+
             String summary = summarizeMessages(toSummarize, existingSummary);
             if (StrUtil.isBlank(summary)) {
                 return;

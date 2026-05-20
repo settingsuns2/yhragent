@@ -17,13 +17,14 @@
 
 package com.nageoffer.ai.ragent.rag.core.intent;
 
-import com.nageoffer.ai.ragent.rag.enums.IntentKind;
-import com.nageoffer.ai.ragent.rag.enums.IntentLevel;
-import lombok.Builder;
-import lombok.Data;
-
 import java.util.ArrayList;
 import java.util.List;
+
+import com.nageoffer.ai.ragent.rag.enums.IntentKind;
+import com.nageoffer.ai.ragent.rag.enums.IntentLevel;
+
+import lombok.Builder;
+import lombok.Data;
 
 @Data
 @Builder
@@ -93,6 +94,14 @@ public class IntentNode {
     private IntentKind kind = IntentKind.KB;
 
     /**
+     * Domain 级正则表达式（仅对 level=DOMAIN 的根节点有意义）
+     * 用于快速预路由：如果用户问题匹配该正则，则进入知识库意图树；
+     * 否则进入自由 Chat 模式。
+     * 示例：pura70|pura 70|华为pura|pura70pro
+     */
+    private String domainRegex;
+
+    /**
      * Milvus Collection 名称（仅对 kind=KB 有意义）
      */
     private String collectionName;
@@ -125,12 +134,23 @@ public class IntentNode {
     private String paramPromptTemplate;
 
     /**
-     * 是否为“最终节点”（叶子节点）：
+     * 是否为"最终节点"（叶子节点）：
+     * - DOMAIN 层级永远不算叶子，即使没有子节点（它只是路由入口）
      * - 叶子节点才挂知识库（Milvus Collection）
      * - 叶子节点才会参与意图匹配打分
      */
     public boolean isLeaf() {
+        if (level == IntentLevel.DOMAIN) {
+            return false;
+        }
         return children == null || children.isEmpty();
+    }
+
+    /**
+     * 是否有子节点（纯结构判断，不受 level 影响）
+     */
+    public boolean hasChildren() {
+        return children != null && !children.isEmpty();
     }
 
     /**

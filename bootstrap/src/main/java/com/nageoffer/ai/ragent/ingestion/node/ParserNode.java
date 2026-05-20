@@ -87,14 +87,21 @@ public class ParserNode implements IngestionNode {
         ParseResult result = parser.parse(context.getRawBytes(), mimeType, options);
         context.setRawText(result.text());
 
-        // 将 ParseResult 转换为 StructuredDocument
         StructuredDocument document = StructuredDocument.builder()
                 .text(result.text())
                 .metadata(result.metadata())
                 .build();
         context.setDocument(document);
 
-        return NodeResult.ok("解析文本长度=" + (result.text() == null ? 0 : result.text().length()));
+        if (result.hasImages()) {
+            context.setImageResources(result.imageResources());
+        }
+
+        String message = "解析文本长度=" + (result.text() == null ? 0 : result.text().length());
+        if (result.hasImages()) {
+            message += "，嵌入图片=" + result.imageResources().size() + " 张";
+        }
+        return NodeResult.ok(message);
     }
 
     /**

@@ -15,37 +15,31 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.controller.request;
+package com.nageoffer.ai.ragent.mcp.remote;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class IntentNodeUpdateRequest {
+@Component
+@ConfigurationProperties(prefix = "mcp.remote")
+public class MCPRemoteProperties {
 
-    private String name;
-    private Integer level;
-    private String parentCode;
-    private String description;
-    private List<String> examples;
-    private String collectionName;
-    private Integer topK;
-    private Integer kind;
-    private Integer sortOrder;
-    private Integer enabled;
-    private String promptSnippet;
-    private String promptTemplate;
-    private String paramPromptTemplate;
+    private boolean enabled = false;
 
-    /**
-     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
-     */
-    private String domainRegex;
+    private Map<String, ServiceConfig> services = new HashMap<>();
+
+    @Data
+    public static class ServiceConfig {
+
+        private String baseUrl;
+
+        private boolean enabled = true;
+
+        private String description;
+    }
 }

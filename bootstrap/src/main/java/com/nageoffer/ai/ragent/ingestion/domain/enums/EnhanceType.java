@@ -40,9 +40,9 @@ public enum EnhanceType {
      * 关键词提取 - 从文档中提取重要关键词
      */
     KEYWORDS("keywords"),
-
+ 
     /**
-     * 问题生成 - 基于文档内容生成相关问题
+     * 问题生成 - 基于文档内容生成相关问题 
      */
     QUESTIONS("questions"),
 

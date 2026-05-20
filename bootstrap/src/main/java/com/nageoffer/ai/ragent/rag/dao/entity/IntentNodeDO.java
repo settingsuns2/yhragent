@@ -97,6 +97,12 @@ public class IntentNodeDO {
     private Integer kind;
 
     /**
+     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
+     * 用于在意图分类前做快速正则预路由
+     */
+    private String domainRegex;
+
+    /**
      * 排序
      */
     private Integer sortOrder;

@@ -21,6 +21,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 对话消息实体
  *
@@ -39,32 +41,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ChatMessage {
 
-    /**
-     * 消息角色类型
-     */
     public enum Role {
-        /**
-         * 系统角色，一般用于设定对话规则、身份设定、风格约束等
-         */
         SYSTEM,
-
-        /**
-         * 用户角色，表示真实用户的提问或输入内容
-         */
         USER,
+        ASSISTANT,
+        TOOL;
 
-        /**
-         * 助手机器人角色，表示大模型返回的回复内容
-         */
-        ASSISTANT;
-
-        /**
-         * 根据字符串值匹配对应的角色枚举
-         *
-         * @param value 角色字符串值，不区分大小写
-         * @return 匹配到的 {@link Role} 枚举值
-         * @throws IllegalArgumentException 当传入的字符串无法匹配任何角色时抛出异常
-         */
         public static Role fromString(String value) {
             for (Role role : Role.values()) {
                 if (role.name().equalsIgnoreCase(value)) {
@@ -75,29 +57,60 @@ public class ChatMessage {
         }
     }
 
-    /**
-     * 当前消息的角色（系统 / 用户 / 助手）
-     */
     private Role role;
 
-    /**
-     * 消息的具体文本内容
-     */
     private String content;
 
-    /**
-     * 深度思考内容（仅 ASSISTANT 角色可能携带）
-     */
     private String thinkingContent;
 
-    /**
-     * 深度思考耗时（秒，仅 ASSISTANT 角色可能携带）
-     */
     private Integer thinkingDuration;
+
+    private List<ContentPart> multiModalContent;
+
+    private List<ToolCall> toolCalls;
+
+    private String toolCallId;
 
     public ChatMessage(Role role, String content) {
         this.role = role;
         this.content = content;
+    }
+
+    public boolean isMultiModal() {
+        return multiModalContent != null && !multiModalContent.isEmpty();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ContentPart {
+
+        private String type;
+
+        private String text;
+
+        private ImageUrl imageUrl;
+
+        public static ContentPart ofText(String text) {
+            return new ContentPart("text", text, null);
+        }
+
+        public static ContentPart ofImageUrl(String url) {
+            return new ContentPart("image_url", null, new ImageUrl(url));
+        }
+
+        public static ContentPart ofImageBase64(String base64, String mimeType) {
+            String dataUrl = "data:" + mimeType + ";base64," + base64;
+            return new ContentPart("image_url", null, new ImageUrl(dataUrl));
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ImageUrl {
+
+        private String url;
     }
 
     /**
@@ -154,5 +167,48 @@ public class ChatMessage {
         message.setThinkingContent(thinkingContent);
         message.setThinkingDuration(thinkingDuration);
         return message;
+    }
+
+    public static ChatMessage userWithImage(String textPrompt, String base64Image, String imageMimeType) {
+        ChatMessage msg = new ChatMessage(Role.USER, null);
+        msg.setMultiModalContent(List.of(
+                ContentPart.ofText(textPrompt),
+                ContentPart.ofImageBase64(base64Image, imageMimeType)
+        ));
+        return msg;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ToolCall {
+
+        private String id;
+
+        private String type;
+
+        private FunctionCall function;
+
+        public ToolCall(String id, String functionName, String arguments) {
+            this.id = id;
+            this.type = "function";
+            this.function = new FunctionCall(functionName, arguments);
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FunctionCall {
+
+        private String name;
+
+        private String arguments;
+    }
+
+    public static ChatMessage toolResult(String toolCallId, String content) {
+        ChatMessage msg = new ChatMessage(Role.TOOL, content);
+        msg.setToolCallId(toolCallId);
+        return msg;
     }
 }

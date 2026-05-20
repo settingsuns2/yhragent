@@ -15,37 +15,26 @@
  * limitations under the License.
  */
 
-package com.nageoffer.ai.ragent.rag.controller.request;
+package com.nageoffer.ai.ragent.ingestion.domain.context;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class IntentNodeUpdateRequest {
+public class ImageResource {
 
-    private String name;
-    private Integer level;
-    private String parentCode;
-    private String description;
-    private List<String> examples;
-    private String collectionName;
-    private Integer topK;
-    private Integer kind;
-    private Integer sortOrder;
-    private Integer enabled;
-    private String promptSnippet;
-    private String promptTemplate;
-    private String paramPromptTemplate;
+    private String imageId;
 
-    /**
-     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
-     */
-    private String domainRegex;
+    private byte[] imageData;
+
+    private String mimeType;
+
+    private int pageNumber;
+
+    private String placeholder;
 }

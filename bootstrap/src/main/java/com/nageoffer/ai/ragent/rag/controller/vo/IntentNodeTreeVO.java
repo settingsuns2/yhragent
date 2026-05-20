@@ -63,5 +63,10 @@ public class IntentNodeTreeVO {
      */
     private String paramPromptTemplate;
 
+    /**
+     * Domain 级正则表达式（仅对 level=0 即 DOMAIN 根节点有意义）
+     */
+    private String domainRegex;
+
     private List<IntentNodeTreeVO> children;
 }

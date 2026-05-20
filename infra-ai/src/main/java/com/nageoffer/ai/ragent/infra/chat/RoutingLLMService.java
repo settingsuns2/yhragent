@@ -18,6 +18,7 @@
 package com.nageoffer.ai.ragent.infra.chat;
 
 import cn.hutool.core.collection.CollUtil;
+import com.nageoffer.ai.ragent.framework.convention.ChatMessage;
 import com.nageoffer.ai.ragent.framework.convention.ChatRequest;
 import com.nageoffer.ai.ragent.framework.errorcode.BaseErrorCode;
 import com.nageoffer.ai.ragent.framework.exception.RemoteException;
@@ -93,6 +94,30 @@ public class RoutingLLMService implements LLMService {
                 target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.chat(request, target)
         );
+    }
+
+    @Override
+    @RagTraceNode(name = "llm-chat-tool-calls", type = "LLM_ROUTING")
+    public ChatMessage chatWithToolCalls(ChatRequest request) {
+        List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
+        for (ModelTarget target : targets) {
+            ChatClient client = clientsByProvider.get(target.candidate().getProvider());
+            if (client == null || !healthStore.allowCall(target.id())) {
+                continue;
+            }
+            try {
+                if (client instanceof AbstractOpenAIStyleChatClient openAiClient) {
+                    return openAiClient.chatWithToolCalls(request, target);
+                } else {
+                    String text = client.chat(request, target);
+                    return new ChatMessage(ChatMessage.Role.ASSISTANT, text);
+                }
+            } catch (Exception e) {
+                log.warn("chatWithToolCalls 失败, model={}, error={}", target.id(), e.getMessage());
+                healthStore.markFailure(target.id());
+            }
+        }
+        throw new RemoteException("所有模型均不可用");
     }
 
     @Override

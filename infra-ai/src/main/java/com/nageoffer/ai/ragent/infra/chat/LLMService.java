@@ -134,4 +134,10 @@ public interface LLMService {
      * @return StreamCancellationHandle 用于取消推理
      */
     StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback);
+
+    default ChatMessage chatWithToolCalls(ChatRequest request) {
+        String result = chat(request);
+        ChatMessage msg = new ChatMessage(ChatMessage.Role.ASSISTANT, result);
+        return msg;
+    }
 }

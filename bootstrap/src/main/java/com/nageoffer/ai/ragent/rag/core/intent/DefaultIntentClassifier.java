@@ -105,6 +105,21 @@ public class DefaultIntentClassifier implements IntentClassifier, IntentNodeRegi
     }
 
     /**
+     * 获取意图树根节点列表（带缓存 fallback）
+     * 优先从 Redis 缓存读取，缓存不存在时从数据库加载并回写缓存
+     */
+    public List<IntentNode> loadRoots() {
+        List<IntentNode> roots = intentTreeCacheManager.getIntentTreeFromCache();
+        if (CollUtil.isEmpty(roots)) {
+            roots = loadIntentTreeFromDB();
+            if (!roots.isEmpty()) {
+                intentTreeCacheManager.saveIntentTreeToCache(roots);
+            }
+        }
+        return roots != null ? roots : List.of();
+    }
+
+    /**
      * 意图树数据结构（临时对象，不持久化）
      */
     private record IntentTreeData(
