@@ -40,9 +40,7 @@ public enum SearchChannelType {
      */
     KEYWORD_ES,
 
-    /**
-     * 混合检索
-     * 结合多种检索策略
-     */
+    KEYWORD_PG,
+
     HYBRID
 }

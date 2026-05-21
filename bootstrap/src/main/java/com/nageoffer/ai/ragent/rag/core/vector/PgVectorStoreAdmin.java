@@ -38,17 +38,34 @@ public class PgVectorStoreAdmin implements VectorStoreAdmin {
     public void ensureVectorSpace(VectorSpaceSpec spec) {
         String indexName = "idx_kv_embedding_hnsw";
 
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
+        //noinspection SqlDialectInspection,SqlNoDataSourceInspection
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM pg_indexes WHERE indexname = ?", Integer.class, indexName);
 
         if (count != null && count > 0) {
             log.debug("HNSW索引已存在: {}", indexName);
+        } else {
+            int dimension = ragDefaultProperties.getDimension();
+            log.info("创建pgvector HNSW索引，维度: {}", dimension);
+            jdbcTemplate.execute(String.format("CREATE INDEX IF NOT EXISTS %s ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops)", indexName));
+        }
+
+        ensureFullTextIndex();
+    }
+
+    private void ensureFullTextIndex() {
+        String ftsIndexName = "idx_kv_tsv";
+
+        //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM pg_indexes WHERE indexname = ?", Integer.class, ftsIndexName);
+
+        if (count != null && count > 0) {
+            log.debug("FTS GIN索引已存在: {}", ftsIndexName);
             return;
         }
 
-        int dimension = ragDefaultProperties.getDimension();
-        log.info("创建pgvector HNSW索引，维度: {}", dimension);
-        jdbcTemplate.execute(String.format("CREATE INDEX IF NOT EXISTS %s ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops)", indexName));
+        log.info("创建全文检索 GIN 索引: {}", ftsIndexName);
+        //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+        jdbcTemplate.execute(String.format("CREATE INDEX IF NOT EXISTS %s ON t_knowledge_vector USING gin(tsv)", ftsIndexName));
     }
 
     @Override

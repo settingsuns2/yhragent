@@ -17,9 +17,10 @@
 
 package com.nageoffer.ai.ragent.rag.config;
 
-import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+
+import lombok.Data;
 
 /**
  * RAG 检索配置
@@ -34,6 +35,11 @@ public class SearchChannelProperties {
      */
     private Channels channels = new Channels();
 
+    /**
+     * 分数融合配置
+     */
+    private ScoreFusion scoreFusion = new ScoreFusion();
+
     @Data
     public static class Channels {
 
@@ -46,6 +52,30 @@ public class SearchChannelProperties {
          * 意图定向检索配置
          */
         private IntentDirected intentDirected = new IntentDirected();
+
+        /**
+         * PG 关键词检索配置（基于 FTS + pg_jieba）
+         */
+        private KeywordPg keywordPg = new KeywordPg();
+    }
+
+    @Data
+    public static class ScoreFusion {
+
+        /**
+         * 是否启用分数融合（dense + sparse 加权融合）
+         */
+        private boolean enabled = true;
+
+        /**
+         * 密集检索（dense）权重，默认 0.7
+         */
+        private double denseWeight = 0.7;
+
+        /**
+         * 稀疏检索（sparse/FTS）权重，默认 0.3
+         */
+        private double sparseWeight = 0.3;
     }
 
     @Data
@@ -93,5 +123,25 @@ public class SearchChannelProperties {
          * TopK 倍数
          */
         private int topKMultiplier = 2;
+    }
+
+    @Data
+    public static class KeywordPg {
+
+        /**
+         * 是否启用 PG 全文检索通道
+         */
+        private boolean enabled = true;
+
+        /**
+         * PostgreSQL 文本搜索配置名称
+         * 安装了 pg_jieba 时使用 jiebacfg，否则使用 simple
+         */
+        private String tsConfigName = "zh";
+
+        /**
+         * TopK 倍数
+         */
+        private int topKMultiplier = 3;
     }
 }

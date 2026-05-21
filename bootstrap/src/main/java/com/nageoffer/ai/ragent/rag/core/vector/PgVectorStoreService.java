@@ -19,6 +19,7 @@ package com.nageoffer.ai.ragent.rag.core.vector;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nageoffer.ai.ragent.core.chunk.VectorChunk;
+import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,8 +36,22 @@ import java.util.Map;
 @ConditionalOnProperty(name = "rag.vector.type", havingValue = "pg")
 public class PgVectorStoreService implements VectorStoreService {
 
+    private static final String INSERT_WITH_FTS =
+            "INSERT INTO t_knowledge_vector (id, content, metadata, embedding, tsv) VALUES (?, ?, ?::jsonb, ?::vector, to_tsvector(?::regconfig, ?))";
+    private static final String INSERT_WITHOUT_FTS =
+            "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector)";
+    private static final String UPSERT_WITH_FTS =
+            "INSERT INTO t_knowledge_vector (id, content, metadata, embedding, tsv) VALUES (?, ?, ?::jsonb, ?::vector, to_tsvector(?::regconfig, ?)) " +
+                    "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding, tsv = EXCLUDED.tsv";
+    private static final String UPSERT_WITHOUT_FTS =
+            "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector) " +
+                    "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding";
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final SearchChannelProperties searchChannelProperties;
+
+    private volatile Boolean ftsAvailable;
 
     @Override
     public void indexDocumentChunks(String collectionName, String docId, List<VectorChunk> chunks) {
@@ -44,17 +59,31 @@ public class PgVectorStoreService implements VectorStoreService {
             return;
         }
 
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        jdbcTemplate.batchUpdate(
-                "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector)",
-                chunks, chunks.size(), (ps, chunk) -> {
-                    ps.setString(1, chunk.getChunkId());
-                    ps.setString(2, chunk.getContent());
-                    ps.setString(3, buildMetadataJson(collectionName, docId, chunk));
-                    ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
-                });
+        if (isFtsAvailable()) {
+            String tsConfig = resolveTsConfig();
+            //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            jdbcTemplate.batchUpdate(INSERT_WITH_FTS,
+                    chunks, chunks.size(), (ps, chunk) -> {
+                        ps.setString(1, chunk.getChunkId());
+                        ps.setString(2, chunk.getContent());
+                        ps.setString(3, buildMetadataJson(collectionName, docId, chunk));
+                        ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
+                        ps.setString(5, tsConfig);
+                        ps.setString(6, chunk.getContent() == null ? "" : chunk.getContent());
+                    });
+        } else {
+            //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            jdbcTemplate.batchUpdate(INSERT_WITHOUT_FTS,
+                    chunks, chunks.size(), (ps, chunk) -> {
+                        ps.setString(1, chunk.getChunkId());
+                        ps.setString(2, chunk.getContent());
+                        ps.setString(3, buildMetadataJson(collectionName, docId, chunk));
+                        ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
+                    });
+        }
 
-        log.info("批量写入向量到 PostgreSQL，collectionName={}, docId={}, count={}", collectionName, docId, chunks.size());
+        log.info("批量写入向量到 PostgreSQL，collectionName={}, docId={}, count={}, fts={}",
+                collectionName, docId, chunks.size(), isFtsAvailable());
     }
 
     @Override
@@ -85,15 +114,26 @@ public class PgVectorStoreService implements VectorStoreService {
 
     @Override
     public void updateChunk(String collectionName, String docId, VectorChunk chunk) {
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        jdbcTemplate.update(
-                "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector) " +
-                        "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding",
-                chunk.getChunkId(),
-                chunk.getContent(),
-                buildMetadataJson(collectionName, docId, chunk),
-                toVectorLiteral(chunk.getEmbedding())
-        );
+        if (isFtsAvailable()) {
+            String tsConfig = resolveTsConfig();
+            //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            jdbcTemplate.update(UPSERT_WITH_FTS,
+                    chunk.getChunkId(),
+                    chunk.getContent(),
+                    buildMetadataJson(collectionName, docId, chunk),
+                    toVectorLiteral(chunk.getEmbedding()),
+                    tsConfig,
+                    chunk.getContent() == null ? "" : chunk.getContent()
+            );
+        } else {
+            //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            jdbcTemplate.update(UPSERT_WITHOUT_FTS,
+                    chunk.getChunkId(),
+                    chunk.getContent(),
+                    buildMetadataJson(collectionName, docId, chunk),
+                    toVectorLiteral(chunk.getEmbedding())
+            );
+        }
     }
 
     private String buildMetadataJson(String collectionName, String docId, VectorChunk chunk) {
@@ -119,5 +159,28 @@ public class PgVectorStoreService implements VectorStoreService {
             sb.append(embedding[i]);
         }
         return sb.append("]").toString();
+    }
+
+    private String resolveTsConfig() {
+        return searchChannelProperties.getChannels().getKeywordPg().getTsConfigName();
+    }
+
+    private boolean isFtsAvailable() {
+        if (ftsAvailable != null) {
+            return ftsAvailable;
+        }
+        try {
+            //noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 't_knowledge_vector' AND column_name = 'tsv'",
+                    Integer.class);
+            ftsAvailable = count != null && count > 0;
+            log.info("FTS tsvector 列可用，入库将同步写入全文检索索引");
+        } catch (Exception e) {
+            ftsAvailable = false;
+            log.warn("FTS tsvector 列不可用（{}），入库将跳过全文检索索引，请执行 upgrade_v1.2_to_v1.3.sql",
+                    e.getMessage());
+        }
+        return ftsAvailable;
     }
 }

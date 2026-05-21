@@ -35,6 +35,6 @@ public class BaiLianEmbeddingClient extends AbstractOpenAIStyleEmbeddingClient {
 
     @Override
     protected int maxBatchSize() {
-        return 25;
+        return 10;
     }
 }
