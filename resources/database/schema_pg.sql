@@ -123,7 +123,7 @@ CREATE TABLE t_knowledge_base (
     create_time     TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted         SMALLINT     NOT NULL DEFAULT 0,
-    CONSTRAINT uk_collection_name UNIQUE (collection_name)
+    CONSTRAINT uk_collection_name UNIQUE (collection_name, deleted)
 );
 CREATE INDEX idx_kb_name ON t_knowledge_base (name);
 COMMENT ON TABLE t_knowledge_base IS '知识库表';

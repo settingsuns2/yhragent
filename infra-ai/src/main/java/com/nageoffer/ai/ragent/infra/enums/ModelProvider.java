@@ -45,6 +45,8 @@ public enum ModelProvider {
 
     DEEPSEEK("deepseek"),
 
+    MIMO("mimo"),
+
     NOOP("noop");
 
     private final String id;

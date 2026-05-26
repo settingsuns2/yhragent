@@ -45,19 +45,28 @@ public class PgRetrieverService implements RetrieverService {
 
     @Override
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
-        // 设置ef_search提升召回率
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         jdbcTemplate.execute("SET hnsw.ef_search = 200");
 
         String vectorLiteral = toVectorLiteral(vector);
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        return jdbcTemplate.query("SELECT id, content, 1 - (embedding <=> ?::vector) AS score FROM t_knowledge_vector WHERE metadata->>'collection_name' = ? ORDER BY embedding <=> ?::vector LIMIT ?",
+
+        if (request.getCollectionName() != null && !request.getCollectionName().isBlank()) {
+            return jdbcTemplate.query("SELECT id, content, 1 - (embedding <=> ?::vector) AS score FROM t_knowledge_vector WHERE metadata->>'collection_name' = ? ORDER BY embedding <=> ?::vector LIMIT ?",
+                    (rs, rowNum) -> RetrievedChunk.builder()
+                            .id(rs.getString("id"))
+                            .text(rs.getString("content"))
+                            .score(rs.getFloat("score"))
+                            .build(),
+                    vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
+            );
+        }
+
+        return jdbcTemplate.query("SELECT id, content, 1 - (embedding <=> ?::vector) AS score FROM t_knowledge_vector ORDER BY embedding <=> ?::vector LIMIT ?",
                 (rs, rowNum) -> RetrievedChunk.builder()
                         .id(rs.getString("id"))
                         .text(rs.getString("content"))
                         .score(rs.getFloat("score"))
                         .build(),
-                vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
+                vectorLiteral, vectorLiteral, request.getTopK()
         );
     }
 

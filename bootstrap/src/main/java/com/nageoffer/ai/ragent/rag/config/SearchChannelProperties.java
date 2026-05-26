@@ -30,15 +30,11 @@ import lombok.Data;
 @ConfigurationProperties(prefix = "rag.search")
 public class SearchChannelProperties {
 
-    /**
-     * 检索通道配置
-     */
     private Channels channels = new Channels();
 
-    /**
-     * 分数融合配置
-     */
     private ScoreFusion scoreFusion = new ScoreFusion();
+
+    private RegexRouting regexRouting = new RegexRouting();
 
     @Data
     public static class Channels {
@@ -143,5 +139,11 @@ public class SearchChannelProperties {
          * TopK 倍数
          */
         private int topKMultiplier = 3;
+    }
+
+    @Data
+    public static class RegexRouting {
+
+        private boolean enabled = false;
     }
 }

@@ -31,8 +31,14 @@ import static com.nageoffer.ai.ragent.rag.enums.IntentLevel.TOPIC;
  */
 public class IntentTreeFactory {
 
-    private static final String KB_ID_GROUP = "1997855927072321537";
-    private static final String KB_ID_BIZ = "1997857139737882625";
+    private static final String KB_ID_GROUP_HR = "2059267101897863168";
+    private static final String KB_ID_GROUP_IT = "2059267102514425856";
+    private static final String KB_ID_GROUP_FINANCE_INVOICE = "2059267102732529664";
+    private static final String KB_ID_BIZ_OA_INTRO = "2059267102963216384";
+    private static final String KB_ID_BIZ_OA_SECURITY = "2059267103147765760";
+    private static final String KB_ID_BIZ_INS_INTRO = "2059267103311343616";
+    private static final String KB_ID_BIZ_INS_ARCH = "2059267103512670208";
+    private static final String KB_ID_BIZ_INS_SECURITY = "2059267103705608192";
 
     public static List<IntentNode> buildIntentTree() {
         List<IntentNode> roots = new ArrayList<>();
@@ -40,7 +46,6 @@ public class IntentTreeFactory {
         // ========== 1. 集团信息化 ==========
         IntentNode group = IntentNode.builder()
                 .id("group")
-                .kbId(KB_ID_GROUP)
                 .name("集团信息化")
                 .level(DOMAIN)
                 .kind(IntentKind.KB)
@@ -48,7 +53,7 @@ public class IntentTreeFactory {
 
         IntentNode hr = IntentNode.builder()
                 .id("group-hr")
-                .kbId(KB_ID_GROUP)
+                .kbId(KB_ID_GROUP_HR)
                 .name("人事")
                 .level(CATEGORY)
                 .parentId(group.getId())
@@ -63,7 +68,7 @@ public class IntentTreeFactory {
 
         IntentNode it = IntentNode.builder()
                 .id("group-it")
-                .kbId(KB_ID_GROUP)
+                .kbId(KB_ID_GROUP_IT)
                 .name("IT支持")
                 .level(CATEGORY)
                 .parentId(group.getId())
@@ -78,7 +83,7 @@ public class IntentTreeFactory {
 
         IntentNode finance = IntentNode.builder()
                 .id("group-finance")
-                .kbId(KB_ID_GROUP)
+                .kbId(KB_ID_GROUP_FINANCE_INVOICE)
                 .name("财务")
                 .level(CATEGORY)
                 .parentId(group.getId())
@@ -91,7 +96,7 @@ public class IntentTreeFactory {
 
         IntentNode financeInvoice = IntentNode.builder()
                 .id("group-finance-invoice")
-                .kbId(KB_ID_GROUP)
+                .kbId(KB_ID_GROUP_FINANCE_INVOICE)
                 .name("发票相关")
                 .level(TOPIC)
                 .parentId(finance.getId())
@@ -111,7 +116,6 @@ public class IntentTreeFactory {
         // ========== 2. 业务系统 ==========
         IntentNode biz = IntentNode.builder()
                 .id("biz")
-                .kbId(KB_ID_BIZ)
                 .name("业务系统")
                 .level(DOMAIN)
                 .kind(IntentKind.KB)
@@ -120,7 +124,7 @@ public class IntentTreeFactory {
         // OA 系统
         IntentNode oa = IntentNode.builder()
                 .id("biz-oa")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_OA_INTRO)
                 .name("OA系统")
                 .level(CATEGORY)
                 .parentId(biz.getId())
@@ -134,7 +138,7 @@ public class IntentTreeFactory {
 
         IntentNode oaIntro = IntentNode.builder()
                 .id("biz-oa-intro")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_OA_INTRO)
                 .name("系统介绍")
                 .level(TOPIC)
                 .parentId(oa.getId())
@@ -147,7 +151,7 @@ public class IntentTreeFactory {
 
         IntentNode oaSecurity = IntentNode.builder()
                 .id("biz-oa-security")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_OA_SECURITY)
                 .name("数据安全")
                 .level(TOPIC)
                 .parentId(oa.getId())
@@ -163,7 +167,7 @@ public class IntentTreeFactory {
         // 保险系统
         IntentNode ins = IntentNode.builder()
                 .id("biz-ins")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_INS_INTRO)
                 .name("保险系统")
                 .level(CATEGORY)
                 .parentId(biz.getId())
@@ -176,7 +180,7 @@ public class IntentTreeFactory {
 
         IntentNode insIntro = IntentNode.builder()
                 .id("biz-ins-intro")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_INS_INTRO)
                 .name("系统介绍")
                 .level(TOPIC)
                 .parentId(ins.getId())
@@ -189,7 +193,7 @@ public class IntentTreeFactory {
 
         IntentNode insArch = IntentNode.builder()
                 .id("biz-ins-arch")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_INS_ARCH)
                 .name("架构设计")
                 .level(TOPIC)
                 .parentId(ins.getId())
@@ -202,7 +206,7 @@ public class IntentTreeFactory {
 
         IntentNode insSecurity = IntentNode.builder()
                 .id("biz-ins-security")
-                .kbId(KB_ID_BIZ)
+                .kbId(KB_ID_BIZ_INS_SECURITY)
                 .name("数据安全")
                 .level(TOPIC)
                 .parentId(ins.getId())

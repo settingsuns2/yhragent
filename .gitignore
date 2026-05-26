@@ -54,6 +54,14 @@ workspace/
 build-output.txt
 build-output2.txt
 req.json
+benchmark-output.txt
 
 ### Claude ###
 .claude/
+
+### Trae ###
+.trae/
+
+### Misc ###
+*.class
+ExecSql.java

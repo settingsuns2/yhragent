@@ -32,6 +32,7 @@ import com.nageoffer.ai.ragent.rag.core.intent.IntentResolver;
 import com.nageoffer.ai.ragent.rag.core.intent.NodeScore;
 import com.nageoffer.ai.ragent.rag.enums.IntentKind;
 import com.nageoffer.ai.ragent.rag.core.memory.ConversationMemoryService;
+import com.nageoffer.ai.ragent.rag.config.SearchChannelProperties;
 import com.nageoffer.ai.ragent.rag.core.mcp.LLMMCPParameterExtractor;
 import com.nageoffer.ai.ragent.rag.core.mcp.MCPRequest;
 import com.nageoffer.ai.ragent.rag.core.mcp.MCPResponse;
@@ -92,19 +93,27 @@ public class StreamChatPipeline {
     private final DefaultIntentClassifier intentClassifier;
     private final MCPToolRegistry mcpToolRegistry;
     private final LLMMCPParameterExtractor mcpParameterExtractor;
+    private final SearchChannelProperties searchChannelProperties;
     private final Gson gson = new Gson();
 
     /**
      * 执行流式对话管道
      * <p>
-     * 路由策略：
-     * 1. 先通过 Domain 根节点正则预路由判断用户问题是否可能属于知识库
-     * 2. 正则命中 → 走意图树（知识库 RAG 流程）
-     * 3. 正则未命中 → 走自由 Chat（工具调用流程）
+     * 路由策略（由 rag.search.regex-routing.enabled 控制）：
+     * - 开启正则预路由：先正则匹配 Domain，命中走 KB/MCP，未命中走自由 Chat
+     * - 关闭正则预路由（默认）：直接走意图树解析，意图树匹配到 KB 节点则走知识库流程，否则走自由 Chat
      */
     public void execute(StreamChatContext ctx) {
         loadMemory(ctx);
 
+        if (searchChannelProperties.getRegexRouting().isEnabled()) {
+            routeByRegex(ctx);
+        } else {
+            routeByIntentTree(ctx);
+        }
+    }
+
+    private void routeByRegex(StreamChatContext ctx) {
         String matchedDomain = matchDomainByRegex(ctx.getQuestion());
         ctx.setMatchedDomainId(matchedDomain);
 
@@ -121,6 +130,44 @@ public class StreamChatPipeline {
             log.info("正则预路由未命中任何 Domain, 走自由 Chat 流程");
             executeFreeChatFlow(ctx);
         }
+    }
+
+    private void routeByIntentTree(StreamChatContext ctx) {
+        log.info("正则预路由已关闭，直接走意图树解析");
+        rewriteQuery(ctx);
+        resolveIntents(ctx);
+
+        if (handleGuidance(ctx)) {
+            return;
+        }
+        if (handleSystemOnly(ctx)) {
+            return;
+        }
+
+        boolean hasKbIntent = hasKbIntent(ctx);
+        if (hasKbIntent) {
+            log.info("意图树匹配到 KB 意图，走知识库流程");
+            RetrievalContext retrievalCtx = retrieve(ctx);
+            if (retrievalCtx.isEmpty()) {
+                log.info("意图树匹配到 KB 意图但检索结果为空，降级到自由 Chat");
+                ctx.setFallbackReason("KB_MISS");
+                executeFreeChatFlow(ctx);
+                return;
+            }
+            streamRagResponse(ctx, retrievalCtx);
+        } else {
+            log.info("意图树未匹配到 KB 意图，走自由 Chat 流程");
+            executeFreeChatFlow(ctx);
+        }
+    }
+
+    private boolean hasKbIntent(StreamChatContext ctx) {
+        if (CollUtil.isEmpty(ctx.getSubIntents())) {
+            return false;
+        }
+        return ctx.getSubIntents().stream()
+                .flatMap(sub -> sub.nodeScores().stream())
+                .anyMatch(ns -> ns.getNode().getKind() == IntentKind.KB);
     }
 
     // ==================== 正则预路由 ====================
